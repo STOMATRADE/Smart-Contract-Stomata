@@ -7,13 +7,14 @@ solc_version = "0.8.30"
 # Optimizer settings
 optimizer = true
 optimizer_runs = 200
+verbosity = 2 
 
 # Gas reports
 gas_reports = ["*"]
-
+fuzz = { runs = 256 }
 # Remappings
 remappings = [
-    "forge-std/=lib/forge-std/src/"
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
 ]
 
 # RPC endpoints
