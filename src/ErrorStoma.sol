@@ -3,7 +3,6 @@ pragma solidity ^0.8.30;
 
 
 library Errors {
-
     error Unauthorized(); 
     error ApprovalNotAllowed(); 
     error TransferNotAllowed(); 
@@ -16,5 +15,4 @@ library Errors {
     error NothingToRefund();    
     error NothingToWithdraw();  
   
-
 }

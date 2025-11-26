@@ -1,33 +1,49 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.30;
 
 import "forge-std/Script.sol";
-import "../src/StomaTrade.sol";
+import "../src/MainStoma.sol";
 import "../src/MockIDRX.sol";
 
 contract DeployScript is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
+        address deployer = vm.addr(deployerPrivateKey);
+
         vm.startBroadcast(deployerPrivateKey);
 
-        // Nilai supply awal untuk MockIDRX (100 Juta Token, tanpa dikalikan 10^18 karena constructor MockIDRX sudah mengalikannya)
-        uint256 initialSupplyIDRX = 100_000_000; 
+        // Deploy MockIDRX token
+        MockIDRX idrx = new MockIDRX(1_000_000); // initial supply 1,000,000 IDRX
 
-        // 1. Deploy Mock IDRX Token. Membutuhkan initialSupply.
-        // MockIDRX constructor akan mengalikan nilai ini dengan 10**decimals()
-        MockIDRX idrxToken = new MockIDRX(initialSupplyIDRX);
-        console.log("IDRX Token deployed at:", address(idrxToken));
+        // Deploy StomaTrade dengan IDRX token address
+        StomaTrade stoma = new StomaTrade(address(idrx));
 
-        // 2. Deploy StomaTrade Contract. Membutuhkan address token IDRX.
-        StomaTrade stomaTrade = new StomaTrade(address(idrxToken));
-        console.log("StomaTrade deployed at:", address(stomaTrade));
-
-        // Catatan: Token 10 juta (sudah ada di initialSupply) sudah otomatis di mint ke deployer
-        // Jika Anda ingin mint tambahan (10 juta IDRX lagi), gunakan fungsi mint:
-        // idrxToken.mint(msg.sender, 10_000_000);
-        // console.log("Minted 10M IDRX (tambahan) to deployer:", msg.sender);
-        
         vm.stopBroadcast();
+        console.log("\n=========================================");
+        console.log("          VERIFY CONTRACT COMMANDS");
+        console.log("=========================================");
+
+        uint256 chainId = block.chainid;
+
+        verify("IDRX", address(idrx), "src/MockIDRX.sol:MockIDRX", abi.encode(1_000_000));
+        verify("STOMATRADE", address(stoma), "src/MainStoma.sol:StomaTrade", abi.encode(deployer));
+        
     }
+ 
+    function verify(string memory name, address c, string memory path, bytes memory args) internal view {
+            console.log(
+                string.concat(
+                    "[VERIFY] ", name,
+                    ": forge verify-contract ",
+                    vm.toString(c),
+                    " ", path,
+                    " --verifier blockscout",
+                    " --verifier-url https://sepolia-blockscout.lisk.com/api",
+                    " --constructor-args ", vm.toString(args),
+                    " --chain-id ", vm.toString(block.chainid),
+                    " --watch"
+                )
+            );
+        }
+
 }

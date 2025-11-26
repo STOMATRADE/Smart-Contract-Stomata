@@ -3,21 +3,18 @@ src = "src"
 out = "out"
 libs = ["lib"]
 solc_version = "0.8.30"
-
-# Optimizer settings
 optimizer = true
 optimizer_runs = 200
-verbosity = 2 
-
-# Gas reports
+via_ir = true
 gas_reports = ["*"]
-fuzz = { runs = 256 }
-# Remappings
+fuzz_runs = 256
+
 remappings = [
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
+    "@openzeppelin/=lib/openzeppelin-contracts/"
 ]
 
-# RPC endpoints
 [rpc_endpoints]
-base_sepolia = "hhttps://sepolia.base.org"
-mainnet = "https://eth.llamarpc.com"
+lisk_sepolia = "https://rpc.sepolia-api.lisk.com"
+
+[etherscan]
+lisk_sepolia = { key = "", url = "https://sepolia-blockscout.lisk.com/api" }

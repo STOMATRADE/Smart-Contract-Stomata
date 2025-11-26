@@ -13,7 +13,7 @@ contract MockIDRX is ERC20, Ownable {
     
 
     constructor(uint256 initialSupply) 
-        ERC20("Indonesian Rupiah X", "IDRX") 
+        ERC20("StableCoin Indonesia", "IDRX") 
         Ownable(msg.sender) 
     {
         // Mint initial supply ke deployer
