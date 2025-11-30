@@ -5,10 +5,12 @@ import "./EnumStoma.sol" ;
 contract Event  {
 
     event ProjectCreated(
-        uint256 indexed idProject,
-        address indexed owner,
-        uint256 valueProject,
-        uint256 maxCrowdFunding
+        uint256 indexed idProject,  // id project
+        address indexed owner,      // address collector
+        uint256 valueProject,       // total nilai project
+        uint256 maxCrowdFunding,    // dana yang dibutuhkan
+        uint256 profitShare ,       // on percentage
+        uint256 fee                 // per kg
     );
 
     event ProjectStatusChanged(

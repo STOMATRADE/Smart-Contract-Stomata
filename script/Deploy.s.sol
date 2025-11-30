@@ -10,40 +10,66 @@ contract DeployScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
+        console.log("==============================================");
+        console.log("Deployer Address:", deployer);
+        console.log("Chain ID:", block.chainid);
+        console.log("==============================================\n");
+
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy MockIDRX token
-        MockIDRX idrx = new MockIDRX(1_000_000); // initial supply 1,000,000 IDRX
+        MockIDRX idrx = new MockIDRX(1_000_000 ether);
+        console.log("MockIDRX deployed at:", address(idrx));
 
         // Deploy StomaTrade dengan IDRX token address
         StomaTrade stoma = new StomaTrade(address(idrx));
+        console.log("StomaTrade deployed at:", address(stoma));
 
         vm.stopBroadcast();
-        console.log("\n=========================================");
-        console.log("          VERIFY CONTRACT COMMANDS");
-        console.log("=========================================");
 
-        uint256 chainId = block.chainid;
+        console.log("\n==============================================");
+        console.log("       VERIFY CONTRACT COMMANDS");
+        console.log("==============================================\n");
 
-        verify("IDRX", address(idrx), "src/MockIDRX.sol:MockIDRX", abi.encode(1_000_000));
-        verify("STOMATRADE", address(stoma), "src/MainStoma.sol:StomaTrade", abi.encode(deployer));
-        
+        // Verify IDRX
+        verify(
+            "IDRX",
+            address(idrx),
+            "src/MockIDRX.sol:MockIDRX",
+            abi.encode(1_000_000 ether)
+        );
+
+        // Verify StomaTrade - ✅ FIXED: gunakan address(idrx) bukan deployer
+        verify(
+            "STOMATRADE",
+            address(stoma),
+            "src/MainStoma.sol:StomaTrade",
+            abi.encode(address(idrx))
+        );
     }
- 
-    function verify(string memory name, address c, string memory path, bytes memory args) internal view {
-            console.log(
-                string.concat(
-                    "[VERIFY] ", name,
-                    ": forge verify-contract ",
-                    vm.toString(c),
-                    " ", path,
-                    " --verifier blockscout",
-                    " --verifier-url https://sepolia-blockscout.lisk.com/api",
-                    " --constructor-args ", vm.toString(args),
-                    " --chain-id ", vm.toString(block.chainid),
-                    " --watch"
-                )
-            );
-        }
 
+    function verify(
+        string memory name,
+        address contractAddress,
+        string memory path,
+        bytes memory args
+    ) internal view {
+        console.log(
+            string.concat(
+                "[VERIFY] ",
+                name,
+                ": forge verify-contract ",
+                vm.toString(contractAddress),
+                " ",
+                path,
+                " --verifier blockscout",
+                " --verifier-url https://sepolia-blockscout.lisk.com/api",
+                " --constructor-args ",
+                vm.toString(args),
+                " --chain-id ",
+                vm.toString(block.chainid),
+                " --watch"
+            )
+        );
+    }
 }

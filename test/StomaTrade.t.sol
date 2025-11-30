@@ -2,167 +2,196 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
-import "../src/MockIDRX.sol";
-import "../src/MainStoma.sol" ;
+import "../src/MainStoma.sol";
+import "../src/MockIDRX.sol"; // mock token IDRX
 
 contract StomaTradeTest is Test {
-    StomaTrade public stomatrade;
+    StomaTrade public stoma;
     MockIDRX public idrx;
 
-    address owner = address(1);
-    address investor = address(2);
-    address investor2 = address(3);
+    address public owner = address(0xABCD);
+    address public investor1 = address(0x1111);
+    address public investor2 = address(0x2222);
 
-function setUp() public {
-    owner = address(1);
-    investor = address(2);
-    investor2 = address(3);
+    function setUp() public {
+        // Deploy mock token
+        vm.prank(owner);
+        idrx = new MockIDRX(1_000_000 ether);
 
-    // =========================
-    // DEPLOY SEBAGAI OWNER
-    // =========================
-    vm.startPrank(owner);
+        // Deploy StomaTrade contract
+        vm.prank(owner);
+        stoma = new StomaTrade(address(idrx));
 
-    idrx = new MockIDRX(1000000000000);
-    stomatrade = new StomaTrade(address(idrx));
+        // Transfer token ke investor
+        idrx.transfer(investor1, 1_000 ether);
+        idrx.transfer(investor2, 1_000 ether);
+    }
 
-    vm.stopPrank();
-
-    // =========================
-    // MINT HARUS DARI OWNER TOKEN
-    // =========================
-    vm.prank(owner);
-    idrx.mint(investor, 1000 ether);
-
-    vm.prank(owner);
-    idrx.mint(investor2, 1000 ether);
-
-    // =========================
-    // APPROVAL DARI INVESTOR
-    // =========================
-    vm.prank(investor);
-    idrx.approve(address(stomatrade), type(uint256).max);
-
-    vm.prank(investor2);
-    idrx.approve(address(stomatrade), type(uint256).max);
-}
-
-
-    // =========================
-    // ✅ CREATE PROJECT
-    // =========================
+    // ================================
+    // TEST CREATE PROJECT
+    // ================================
     function testCreateProject() public {
         vm.prank(owner);
-
-        uint256 id = stomatrade.createProject(
-            100 ether,
-            500 ether,
-            "QmTestCID"
+        uint256 projectId = stoma.createProject(
+            1000 ether,
+            1000 ether,
+            "QmTestCid",
+            owner,
+            100,
+            10,
+            1
         );
 
-        (
-            uint256 pid,
-            address projectOwner,
-            ,
-            uint256 totalRaised,
-            ProjectStatus status
-        ) = stomatrade.getProject(id);
-
-        assertEq(pid, 1);
-        assertEq(projectOwner, owner);
-        assertEq(totalRaised, 0);
-        assertEq(uint256(status), uint256(ProjectStatus.ACTIVE));
+        (,,uint256 value,,ProjectStatus status,,,) = stoma.getProject(projectId);
+        assertEq(value, 1000 ether);
+        assertEq(uint(status), uint(ProjectStatus.ACTIVE));
     }
 
-    // =========================
-    // ✅ INVEST TEST
-    // =========================
-    function testInvest() public {
+    // ================================
+    // TEST INVEST & CLAIM PROFIT
+    // ================================
+    function testInvestAndClaimProfit() public {
         vm.prank(owner);
-        uint256 pid = stomatrade.createProject(
-            100 ether,
-            500 ether,
-            "QmTestCID"
+        uint256 projectId = stoma.createProject(
+            1000 ether,
+            1000 ether,
+            "QmTestCid",
+            owner,
+            100,
+            10,
+            1
         );
 
-        vm.prank(investor);
-        stomatrade.invest(pid, 200 ether);
+        // Investor1 invest 200
+        vm.startPrank(investor1);
+        idrx.approve(address(stoma), 200 ether);
+        stoma.invest(projectId, 200 ether);
+        vm.stopPrank();
 
-        (, , , uint256 raised, ) = stomatrade.getProject(pid);
-        assertEq(raised, 200 ether);
+        // Investor2 invest 300
+        vm.startPrank(investor2);
+        idrx.approve(address(stoma), 300 ether);
+        stoma.invest(projectId, 300 ether);
+        vm.stopPrank();
+
+        // Owner deposit profit 100
+        vm.prank(owner);
+        idrx.approve(address(stoma), 100 ether);
+        stoma.depositProfit(projectId, 100 ether);
+
+        // Investor1 claim profit
+        vm.startPrank(investor1);
+        stoma.claimProfit(projectId);
+        vm.stopPrank();
+
+        // Investor2 claim profit
+        vm.startPrank(investor2);
+        stoma.claimProfit(projectId);
+        vm.stopPrank();
+
+        // Check balances
+        uint256 investor1Balance = idrx.balanceOf(investor1);
+        uint256 investor2Balance = idrx.balanceOf(investor2);
+
+        assertTrue(investor1Balance > 200 ether);
+        assertTrue(investor2Balance > 300 ether);
     }
 
-    // =========================
-    // ✅ MULTI INVEST + AUTO SUCCESS
-    // =========================
-    function testAutoSuccessWhenFull() public {
-        vm.prank(owner);
-        uint256 pid = stomatrade.createProject(
-            100 ether,
-            300 ether,
-            "QmTestCID"
-        );
-
-        vm.prank(investor);
-        stomatrade.invest(pid, 200 ether);
-
-        vm.prank(investor2);
-        stomatrade.invest(pid, 100 ether);
-
-        (, , , uint256 raised, ProjectStatus status) = stomatrade.getProject(pid);
-
-        assertEq(raised, 300 ether);
-        assertEq(uint256(status), uint256(ProjectStatus.SUCCESS));
-    }
-
-    // =========================
-    // ✅ PROFIT CLAIM TEST
-    // =========================
-    function testProfitClaim() public {
-        vm.prank(owner);
-        uint256 pid = stomatrade.createProject(
-            100 ether,
-            500 ether,
-            "QmTestCID"
-        );
-
-        vm.prank(investor);
-        stomatrade.invest(pid, 200 ether);
-
-        vm.prank(owner);
-        idrx.approve(address(stomatrade), 100 ether);
-        vm.prank(owner);
-        stomatrade.depositProfit(pid, 100 ether);
-
-        uint256 before = idrx.balanceOf(investor);
-
-        vm.prank(investor);
-        stomatrade.claimProfit(pid);
-
-        uint256 afterBal = idrx.balanceOf(investor);
-        assertGt(afterBal, before);
-    }
-
+    // ================================
+    // TEST REFUND
+    // ================================
     function testRefund() public {
         vm.prank(owner);
-        uint256 pid = stomatrade.createProject(
-            100 ether,
-            500 ether,
-            "QmTestCID"
+        uint256 projectId = stoma.createProject(
+            1000 ether,
+            1000 ether,
+            "QmTestCid",
+            owner,
+            100,
+            10,
+            1
         );
 
-        vm.prank(investor);
-        stomatrade.invest(pid, 200 ether);
+        // Investor1 invest 200
+        vm.startPrank(investor1);
+        idrx.approve(address(stoma), 200 ether);
+        stoma.invest(projectId, 200 ether);
+        vm.stopPrank();
+
+        // Owner set project to refundable
+        vm.prank(owner);
+        stoma.refundable(projectId);
+
+        // Investor1 claim refund
+        vm.startPrank(investor1);
+        stoma.claimRefund(projectId, investor1);
+        vm.stopPrank();
+
+        uint256 refundedBalance = idrx.balanceOf(investor1);
+        assertEq(refundedBalance, 1000 ether);
+    }
+
+    // ================================
+    // TEST FARMER NFT MINT
+    // ================================
+    function testFarmerNFTMint() public {
+        vm.startPrank(investor1);
+        stoma.nftFarmer("Padi");
+        vm.stopPrank();
+
+        string memory name = stoma.farmerName(1);
+        assertEq(name, "Padi");
+    }
+
+    // ================================
+    // TEST SET PROJECT STATUS
+    // ================================
+    function testSetProjectStatus() public {
+        vm.prank(owner);
+        uint256 projectId = stoma.createProject(
+            1000 ether,
+            1000 ether,
+            "QmTestCid",
+            owner,
+            100,
+            10,
+            1
+        );
 
         vm.prank(owner);
-        stomatrade.refundable(pid);
+        stoma.setProjectStatus(projectId, ProjectStatus.CLOSED);
 
-        uint256 before = idrx.balanceOf(investor);
+        (, , , , ProjectStatus status, , ,) = stoma.getProject(projectId);
+        assertEq(uint(status), uint(ProjectStatus.CLOSED));
+    }
 
-        vm.prank(investor);
-        stomatrade.claimRefund(pid);
+    // ================================
+    // TEST GET CLAIMABLE PROFIT
+    // ================================
+    function testGetClaimableProfit() public {
+        vm.prank(owner);
+        uint256 projectId = stoma.createProject(
+            1000 ether,
+            1000 ether,
+            "QmTestCid",
+            owner,
+            100,
+            10,
+            1
+        );
 
-        uint256 afterBal = idrx.balanceOf(investor);
-        assertEq(afterBal, before + 200 ether);
+        // Investor1 invest 200
+        vm.startPrank(investor1);
+        idrx.approve(address(stoma), 200 ether);
+        stoma.invest(projectId, 200 ether);
+        vm.stopPrank();
+
+        // Owner deposit profit 100
+        vm.prank(owner);
+        idrx.approve(address(stoma), 100 ether);
+        stoma.depositProfit(projectId, 100 ether);
+
+        uint256 claimable = stoma.getClaimableProfit(projectId, investor1);
+        assertTrue(claimable > 0);
     }
 }

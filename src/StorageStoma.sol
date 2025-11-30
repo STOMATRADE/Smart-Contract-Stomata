@@ -10,6 +10,9 @@ struct Project {
     uint256 maxCrowdFunding;
     uint256 totalRaised;
     ProjectStatus status;
+    uint256 profitShare ;
+    uint256 fee ;
+    uint256 totalKG ;
 }
 
 struct Investment {
