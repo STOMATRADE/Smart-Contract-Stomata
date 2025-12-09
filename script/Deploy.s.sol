@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Script.sol";
-import "../src/MainStoma.sol";
+import "../src/Stomatrade.sol";
 import "../src/MockIDRX.sol";
 
 contract DeployScript is Script {
@@ -15,8 +15,8 @@ contract DeployScript is Script {
         // Deploy MockIDRX token
         MockIDRX idrx = new MockIDRX(1_000_000); // initial supply 1,000,000 IDRX
 
-        // Deploy StomaTrade dengan IDRX token address
-        StomaTrade stoma = new StomaTrade(address(idrx));
+        // Deploy Stomatrade dengan IDRX token address
+        Stomatrade stomatrade = new Stomatrade(address(idrx));
 
         vm.stopBroadcast();
         console.log("\n=========================================");
@@ -26,10 +26,10 @@ contract DeployScript is Script {
         uint256 chainId = block.chainid;
 
         verify("IDRX", address(idrx), "src/MockIDRX.sol:MockIDRX", abi.encode(1_000_000));
-        verify("STOMATRADE", address(stoma), "src/MainStoma.sol:StomaTrade", abi.encode(deployer));
-        
+        verify("STOMATRADE", address(stomatrade), "src/Stomatrade.sol:Stomatrade", abi.encode(address(idrx)));
+
     }
- 
+
     function verify(string memory name, address c, string memory path, bytes memory args) internal view {
             console.log(
                 string.concat(
