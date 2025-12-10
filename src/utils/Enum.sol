@@ -10,6 +10,6 @@ enum ProjectStatus {
 }
 
 enum InvestmentStatus {
-    CLAIMED, // when investmend has been claimed by investor
-    UNCLAIMED // when investmend has not been claimed by investor
+    CLAIMED, // when investment has been claimed by investor
+    UNCLAIMED // when investment has not been claimed by investor
 }
