@@ -101,22 +101,37 @@ contract Stomatrade is
 
     function closeProject(uint256 _idProject) external onlyOwner {
         Project storage p = projects[_idProject];
+
+        ProjectStatus oldStatus = p.status;
         p.status = ProjectStatus.CLOSED;
-        emit ProjectStatusChanged(
-            _idProject,
-            ProjectStatus.ACTIVE,
-            ProjectStatus.CLOSED
-        );
+
+        emit ProjectStatusChanged(_idProject, oldStatus, ProjectStatus.CLOSED);
     }
 
     function refundProject(uint256 _idProject) external onlyOwner {
         Project storage p = projects[_idProject];
+        ProjectStatus oldStatus = p.status;
         p.status = ProjectStatus.REFUND;
-        emit ProjectStatusChanged(
-            _idProject,
-            ProjectStatus.ACTIVE,
-            ProjectStatus.CLOSED
-        );
+
+        emit ProjectStatusChanged(_idProject, oldStatus, p.status);
+    }
+
+    function withdrawProject(uint256 _idProject) external onlyOwner {
+        Project storage p = projects[_idProject];
+
+        if (
+            p.status == ProjectStatus.REFUND ||
+            p.status == ProjectStatus.SUCCESS ||
+            p.status == ProjectStatus.PROCESSED
+        ) {
+            revert Errors.InvalidProject();
+        }
+
+        ProjectStatus oldStatus = p.status;
+        p.status = ProjectStatus.SUCCESS;
+
+        IDRX.safeTransferFrom(address(this), msg.sender, p.totalRaised);
+        emit ProjectStatusChanged(_idProject, oldStatus, p.status);
     }
 
     function finishProject(uint256 _idProject) external nonReentrant onlyOwner {
@@ -124,25 +139,23 @@ contract Stomatrade is
         IDRX.safeTransferFrom(msg.sender, address(this), obligationAmount);
 
         Project storage p = projects[_idProject];
+        ProjectStatus oldStatus = p.status;
         p.status = ProjectStatus.SUCCESS;
-        emit ProjectStatusChanged(
-            _idProject,
-            ProjectStatus.ACTIVE,
-            ProjectStatus.CLOSED
-        );
+
+        emit ProjectStatusChanged(_idProject, oldStatus, p.status);
     }
 
     function invest(
         string memory _cid,
-        uint256 projectId,
+        uint256 _idProject,
         uint256 requestedAmount
     ) external nonReentrant {
-        if (projectId == 0 || projectId >= idProject) {
+        if (_idProject == 0 || _idProject >= idProject) {
             revert Errors.InvalidProject();
         }
         if (requestedAmount == 0) revert Errors.ZeroAmount();
 
-        Project storage p = projects[projectId];
+        Project storage p = projects[_idProject];
 
         if (p.status != ProjectStatus.ACTIVE) {
             revert Errors.InvalidProject();
@@ -159,7 +172,7 @@ contract Stomatrade is
         }
 
         IDRX.safeTransferFrom(msg.sender, address(this), invested);
-        Investment storage userInvest = contribution[projectId][msg.sender];
+        Investment storage userInvest = contribution[_idProject][msg.sender];
 
         bool isExistingInvestor = (userInvest.investor == msg.sender);
         uint256 investmentId;
@@ -168,7 +181,7 @@ contract Stomatrade is
             investmentId = idInvestment++;
 
             userInvest.id = investmentId;
-            userInvest.idProject = projectId;
+            userInvest.idProject = _idProject;
             userInvest.investor = msg.sender;
             userInvest.amount = invested;
             userInvest.status = InvestmentStatus.UNCLAIMED;
@@ -195,31 +208,31 @@ contract Stomatrade is
         investmentsByTokenId[investmentId] = userInvest;
         p.totalRaised += invested;
 
-        emit Invested(projectId, msg.sender, invested, investmentId);
+        emit Invested(_idProject, msg.sender, invested, investmentId);
 
         if (p.totalRaised == p.maxInvested) {
             ProjectStatus oldStatus = p.status;
             p.status = ProjectStatus.CLOSED;
             emit ProjectStatusChanged(
-                projectId,
+                _idProject,
                 oldStatus,
                 ProjectStatus.CLOSED
             );
         }
     }
 
-    function claimRefund(uint256 projectId) external nonReentrant {
-        if (projectId == 0 || projectId >= idProject) {
+    function claimRefund(uint256 _idProject) external nonReentrant {
+        if (_idProject == 0 || _idProject >= idProject) {
             revert Errors.InvalidProject();
         }
 
-        Project storage p = projects[projectId];
+        Project storage p = projects[_idProject];
 
         if (p.status != ProjectStatus.REFUND) {
             revert Errors.InvalidState();
         }
 
-        Investment storage inv = contribution[projectId][msg.sender];
+        Investment storage inv = contribution[_idProject][msg.sender];
 
         if (inv.investor != msg.sender) {
             revert Errors.NothingToRefund();
@@ -246,21 +259,21 @@ contract Stomatrade is
 
         IDRX.safeTransfer(msg.sender, refundAmount);
 
-        emit Refunded(projectId, msg.sender, refundAmount);
+        emit Refunded(_idProject, msg.sender, refundAmount);
     }
 
-    function claimWithdraw(uint256 projectId) external nonReentrant {
-        if (projectId == 0 || projectId >= idProject) {
+    function claimWithdraw(uint256 _idProject) external nonReentrant {
+        if (_idProject == 0 || _idProject >= idProject) {
             revert Errors.InvalidProject();
         }
 
-        Project storage p = projects[projectId];
+        Project storage p = projects[_idProject];
 
         if (p.status != ProjectStatus.SUCCESS) {
             revert Errors.InvalidState();
         }
 
-        Investment storage inv = contribution[projectId][msg.sender];
+        Investment storage inv = contribution[_idProject][msg.sender];
 
         if (inv.investor != msg.sender) {
             revert Errors.NothingToWithdraw();
@@ -271,7 +284,7 @@ contract Stomatrade is
         }
 
         (uint256 principal, , uint256 totalReturn) = getInvestorReturn(
-            projectId,
+            _idProject,
             msg.sender
         );
 
@@ -289,11 +302,11 @@ contract Stomatrade is
         }
 
         IDRX.safeTransfer(msg.sender, totalReturn);
-        emit ProfitClaimed(projectId, msg.sender, totalReturn);
+        emit ProfitClaimed(_idProject, msg.sender, totalReturn);
     }
 
     function getProjectProfitBreakdown(
-        uint256 projectId
+        uint256 _idProject
     )
         public
         view
@@ -303,7 +316,7 @@ contract Stomatrade is
             uint256 platformProfit
         )
     {
-        Project memory p = projects[projectId];
+        Project memory p = projects[_idProject];
 
         grossProfit = p.totalKilos * p.profitPerKillos;
 
@@ -313,16 +326,16 @@ contract Stomatrade is
     }
 
     function getInvestorReturn(
-        uint256 projectId,
+        uint256 _idProject,
         address investor
     )
         public
         view
         returns (uint256 principal, uint256 profit, uint256 totalReturn)
     {
-        Project memory p = projects[projectId];
+        Project memory p = projects[_idProject];
 
-        Investment memory inv = contribution[projectId][investor];
+        Investment memory inv = contribution[_idProject][investor];
         principal = inv.amount;
 
         if (principal == 0 || p.totalRaised == 0) {
@@ -333,7 +346,7 @@ contract Stomatrade is
             uint256 grossProfit,
             uint256 investorProfitPool,
 
-        ) = getProjectProfitBreakdown(projectId);
+        ) = getProjectProfitBreakdown(_idProject);
 
         if (grossProfit == 0 || investorProfitPool == 0) {
             return (principal, 0, principal);
@@ -345,7 +358,7 @@ contract Stomatrade is
     }
 
     function getAdminRequiredDeposit(
-        uint256 projectId
+        uint256 _idProject
     )
         public
         view
@@ -355,11 +368,13 @@ contract Stomatrade is
             uint256 totalRequired
         )
     {
-        Project memory p = projects[projectId];
+        Project memory p = projects[_idProject];
 
         totalPrincipal = p.totalRaised;
 
-        (, uint256 investorProfitPool, ) = getProjectProfitBreakdown(projectId);
+        (, uint256 investorProfitPool, ) = getProjectProfitBreakdown(
+            _idProject
+        );
 
         totalInvestorProfit = investorProfitPool;
 
