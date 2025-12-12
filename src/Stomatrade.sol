@@ -27,6 +27,7 @@ contract Stomatrade is
 {
     using SafeERC20 for IERC20;
     IERC20 public immutable IDRX;
+    uint256 public idToken = 1;
 
     constructor(
         address idrxTokenAddress
@@ -42,9 +43,12 @@ contract Stomatrade is
         uint256 _age,
         string memory _domicile
     ) external onlyOwner returns (uint256 _idFarmer) {
-        _idFarmer = idFarmer++;
+        ++idToken;
+        _idFarmer = ++idFarmer;
+
         farmers[_idFarmer] = Farmer({
             id: _idFarmer,
+            idToken: idToken,
             idCollector: _idCollector,
             name: _name,
             age: _age,
@@ -54,8 +58,8 @@ contract Stomatrade is
         if (bytes(_cid).length > 0) {
             string memory uri = string(abi.encodePacked(BASE_IPFS_URL, _cid));
 
-            _safeMint(msg.sender, _idFarmer);
-            _setTokenURI(_idFarmer, uri);
+            _safeMint(msg.sender, idToken);
+            _setTokenURI(idToken, uri);
         }
 
         emit FarmerAdded(_idFarmer, _idCollector);
@@ -70,11 +74,21 @@ contract Stomatrade is
         uint256 _sharedProfit
     ) external onlyOwner returns (uint256 _idProject) {
         if (_maxInvested == 0) revert Errors.ZeroAmount();
-        if (msg.sender == address(0)) revert Errors.ZeroAddress();
+        // Basic sanity checks to avoid nonsensical project configuration
+        if (_totalKilos == 0 || _profitPerKillos == 0) {
+            revert Errors.InvalidInput();
+        }
+        // sharedProfit is a percentage in range [0, 100]
+        if (_sharedProfit > 100) {
+            revert Errors.InvalidInput();
+        }
 
-        _idProject = idProject++;
+        ++idToken;
+        _idProject = ++idProject;
+
         projects[_idProject] = Project({
             id: _idProject,
+            idToken: idToken,
             valueProject: _valueProject,
             maxInvested: _maxInvested,
             totalRaised: 0,
@@ -87,8 +101,8 @@ contract Stomatrade is
         if (bytes(_cid).length > 0) {
             string memory uri = string(abi.encodePacked(BASE_IPFS_URL, _cid));
 
-            _safeMint(msg.sender, _idProject);
-            _setTokenURI(_idProject, uri);
+            _safeMint(msg.sender, idToken);
+            _setTokenURI(idToken, uri);
         }
 
         emit ProjectCreated(
@@ -130,7 +144,15 @@ contract Stomatrade is
         ProjectStatus oldStatus = p.status;
         p.status = ProjectStatus.SUCCESS;
 
-        IDRX.safeTransferFrom(address(this), msg.sender, p.totalRaised);
+        uint256 amount = p.totalRaised;
+        if (amount == 0) {
+            revert Errors.NothingToWithdraw();
+        }
+
+        // Reset project raised amount and transfer funds to owner.
+        p.totalRaised = 0;
+        IDRX.safeTransfer(msg.sender, amount);
+
         emit ProjectStatusChanged(_idProject, oldStatus, p.status);
     }
 
@@ -150,79 +172,74 @@ contract Stomatrade is
         uint256 _idProject,
         uint256 requestedAmount
     ) external nonReentrant {
-        if (_idProject == 0 || _idProject >= idProject) {
+        if (_idProject == 0 || _idProject > idProject)
             revert Errors.InvalidProject();
-        }
-        if (requestedAmount == 0) revert Errors.ZeroAmount();
 
         Project storage p = projects[_idProject];
+        if (p.status != ProjectStatus.ACTIVE) revert Errors.InvalidProject();
+        if (requestedAmount == 0) revert Errors.ZeroAmount();
 
-        if (p.status != ProjectStatus.ACTIVE) {
-            revert Errors.InvalidProject();
-        }
+        uint256 remaining = p.maxInvested - p.totalRaised;
+        if (remaining == 0) revert Errors.MaxFundingExceeded();
 
-        uint256 freeToInvest = p.maxInvested - p.totalRaised;
-        if (freeToInvest == 0) {
-            revert Errors.MaxFundingExceeded();
-        }
-
-        uint256 invested = requestedAmount;
-        if (requestedAmount > freeToInvest) {
-            invested = freeToInvest;
-        }
+        uint256 invested = requestedAmount > remaining
+            ? remaining
+            : requestedAmount;
 
         IDRX.safeTransferFrom(msg.sender, address(this), invested);
-        Investment storage userInvest = contribution[_idProject][msg.sender];
 
-        bool isExistingInvestor = (userInvest.investor == msg.sender);
-        uint256 investmentId;
+        Investment storage inv = contribution[_idProject][msg.sender];
 
-        if (!isExistingInvestor) {
-            investmentId = idInvestment++;
+        bool first = inv.investor == address(0);
 
-            userInvest.id = investmentId;
-            userInvest.idProject = _idProject;
-            userInvest.investor = msg.sender;
-            userInvest.amount = invested;
-            userInvest.status = InvestmentStatus.UNCLAIMED;
+        uint256 nftId;
+
+        if (first) {
+            nftId = ++idToken;
+            uint256 invId = ++idInvestment;
+
+            inv.id = invId;
+            inv.idToken = nftId;
+            inv.idProject = _idProject;
+            inv.investor = msg.sender;
+            inv.amount = invested;
+            inv.status = InvestmentStatus.UNCLAIMED;
 
             if (bytes(_cid).length > 0) {
                 string memory uri = string(
                     abi.encodePacked(BASE_IPFS_URL, _cid)
                 );
-                _safeMint(msg.sender, investmentId);
-                _setTokenURI(investmentId, uri);
+                _safeMint(msg.sender, nftId);
+                _setTokenURI(nftId, uri);
             }
+
+            investmentsByTokenId[nftId] = inv;
+
+            emit Invested(_idProject, msg.sender, invested, nftId);
         } else {
-            investmentId = userInvest.id;
-            userInvest.amount += invested;
-
             if (bytes(_cid).length > 0) {
                 string memory uri = string(
                     abi.encodePacked(BASE_IPFS_URL, _cid)
                 );
-                _setTokenURI(investmentId, uri);
+                _setTokenURI(inv.idToken, uri);
             }
+
+            // update only amount
+            inv.amount += invested;
+            emit Invested(_idProject, msg.sender, invested, inv.idToken);
         }
 
-        investmentsByTokenId[investmentId] = userInvest;
         p.totalRaised += invested;
 
-        emit Invested(_idProject, msg.sender, invested, investmentId);
-
         if (p.totalRaised == p.maxInvested) {
-            ProjectStatus oldStatus = p.status;
+            ProjectStatus old = p.status;
             p.status = ProjectStatus.CLOSED;
-            emit ProjectStatusChanged(
-                _idProject,
-                oldStatus,
-                ProjectStatus.CLOSED
-            );
+            emit ProjectStatusChanged(_idProject, old, ProjectStatus.CLOSED);
         }
     }
 
     function claimRefund(uint256 _idProject) external nonReentrant {
-        if (_idProject == 0 || _idProject >= idProject) {
+        if (_idProject == 0 || _idProject > idProject) {
             revert Errors.InvalidProject();
         }
 
@@ -263,7 +280,7 @@ contract Stomatrade is
     }
 
     function claimWithdraw(uint256 _idProject) external nonReentrant {
-        if (_idProject == 0 || _idProject >= idProject) {
+        if (_idProject == 0 || _idProject > idProject) {
             revert Errors.InvalidProject();
         }
 

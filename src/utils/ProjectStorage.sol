@@ -9,6 +9,7 @@ contract ProjectStorage {
 
     struct Project {
         uint256 id;
+        uint256 idToken;
         uint256 valueProject; // total liquidity needs project
         uint256 maxInvested; // total liquidity available for public
         uint256 totalRaised; // total liquidity raised
@@ -20,6 +21,7 @@ contract ProjectStorage {
 
     struct Investment {
         uint256 id;
+        uint256 idToken;
         uint256 idProject;
         address investor;
         uint256 amount;
